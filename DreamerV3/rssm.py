@@ -133,3 +133,49 @@ class RSSM(nn.Module):
         :return r_t: reward estimate at step t
         """
         return self.reward_model(torch.cat([h_t, z_t], dim=-1))
+    
+    def imagine_one(self, actor, h_t, z_t):
+        """
+        Imagines the next state based on an actor's reaction
+        :param actor: actor class, that has a .act() method that returns an action given hidden and stoch states
+        :param h_t: hidden state given by the sequence model
+        :param z_t: stochastic state given by the model
+
+        :return next_hidden_state: the imaginated next hidden state given the actor's behavior
+        :return next_stoch_state: the imaginated next stochastic state given the actor's behavior
+        :return action: the action given out by the actor for that precise state
+        """
+        action = actor.act(torch.cat((h_t, z_t), dim=-1))
+        next_hidden_state = self.sequence_step(h_t, z_t, action)
+        next_stoch_state = self.dynamics(next_hidden_state)
+
+        return next_hidden_state, next_stoch_state, action
+    
+    def imagine_n(self, actor, h_t, z_t, n: int):
+        """
+        Imagines the n next states based on an actor's reaction
+        :param actor: actor class, that has a .act() method that returns an action given hidden and stoch states
+        :param h_t: starting hidden state given by the sequence model
+        :param z_t: starting stochastic state given by the model
+        
+        :return hidden_states: the imaginated sequence of hidden states given the actor's behavior
+        :return stoch_states: the imaginated sequence of stochastic states given the actor's behavior
+        :return actions: the sequence of actions given out by the actor for that sequence
+        """
+        h_tmp = h_t.clone()
+        z_tmp = z_t.clone()
+
+        actions = []
+        hidden_states = []
+        stoch_states = []
+
+        for step in range(n):
+            next_hidden_state, next_stoch_state, action = self.imagine_one(actor, h_tmp, z_tmp)
+            actions.append(action)
+            hidden_states.append(next_hidden_state)
+            stoch_states.append(next_stoch_state)
+
+            h_tmp = next_hidden_state
+            z_tmp = next_stoch_state
+        
+        return hidden_states, stoch_states, actions
