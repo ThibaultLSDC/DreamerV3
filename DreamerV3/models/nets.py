@@ -46,4 +46,23 @@ class MLP(nn.Module):
         return self.model(x)
 
 
-# class RSSM(nn.Module):
+class GRUCell(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.linear = nn.Linear(in_dim + out_dim, out_dim * 3)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        std = 1.0 / torch.sqrt(self.linear.weight.size(1))
+        nn.init.uniform_(self.linear.weight, -std, std)
+        nn.init.uniform_(self.linear.bias, -std, std)
+    
+    def forward(self, x, h):
+        x = torch.cat([x, h], dim=-1)
+        x = self.linear(x)
+        reset, cand, update = torch.split(x, x.size(-1) // 3, dim=-1)
+        reset = torch.sigmoid(reset)
+        cand = torch.tanh(reset * cand)
+        update = torch.sigmoid(update-1)
+        h = update * cand + (1 - update) * h
+        return h
