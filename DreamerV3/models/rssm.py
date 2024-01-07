@@ -50,9 +50,40 @@ class RSSM(nn.Module):
         return ReshapeCategorical(logits,  self.stochastic_size)
     
     def observe(self, obs, action, first, state=None):
+        """
+        obs: t+1 -> t+T
+        action: t -> t+T-1
+        first: t -> t+T-1
+
+        posterior: t+1 -> t+T
+        """
         if state is None:
             state = self.initialize(obs.shape[0])
+        posterior = {'deter': [], 'stoch': [], 'logits': []}
+        for o, a, f in zip(obs, action, first):
+            state = self.obs_step(state, a, o, f)
+            for k, v in state.items():
+                posterior[k].append(v)
+        for k, v in posterior.items():
+            posterior[k] = torch.stack(v, dim=0)
+        return posterior
+    
+    def imagine(self, action, state=None):
+        """
+        action: t -> t+T-1
         
+        prior: t+1 -> t+T
+        """
+        if state is None:
+            state = self.initialize(action.shape[0])
+        prior = {'deter': [], 'stoch': [], 'logits': []}
+        for a in action:
+            state = self.img_step(state, a)
+            for k, v in state.items():
+                prior[k].append(v)
+        for k, v in prior.items():
+            prior[k] = torch.stack(v, dim=0)
+        return prior
 
     def obs_step(self, state, action, obs, first):
         """
@@ -96,7 +127,7 @@ class RSSM(nn.Module):
         Returns:
             dict: Dictionary containing all state information
                 state['stoch'] (torch.Tensor): ~z_t shape(bs, latent_dim)
-                state['deter'] (torch.Tensor): ~h_t shape(bs, rec_dim)
+                state['deter'] (torch.Tensor): h_t shape(bs, rec_dim)
                 state['logits'] (torch.Tensor): logits shape(bs, latent_dim)
         """
         x = torch.cat((state['stoch'], action), dim=-1)
