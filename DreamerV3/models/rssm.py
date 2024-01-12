@@ -1,13 +1,16 @@
 import torch
 import torch.nn as nn
 
-from DreamerV3.models.nets import Activation, Linear, MLP, GRUCell
-from DreamerV3.models.dists import ReshapeCategorical
+from .nets import Activation, Linear, MLP, GRUCell
+from .dists import ReshapeCategorical
+
+
+def swap(x):
+    return torch.transpose(x, 0, 1)
 
 
 class RSSM(nn.Module):
     def __init__(self,
-                state_dim: int,
                 action_dim: int,
                 hidden_dim: int=256,
                 rec_dim: int=256,
@@ -16,7 +19,6 @@ class RSSM(nn.Module):
                 learned_initial_state: bool=False,):
         super().__init__()
         
-        self.state_dim = state_dim
         self.action_dim = action_dim
         self.hidden_dim = hidden_dim
         self.rec_dim = rec_dim
@@ -25,7 +27,7 @@ class RSSM(nn.Module):
         self.latent_dim = stochastic_dim * stochastic_size
 
         # Encoder to hidden
-        self._in = Linear(state_dim + action_dim, hidden_dim)
+        self._in = Linear(self.latent_dim + action_dim, hidden_dim)
         # Next deterministic state prediction
         self._gru = GRUCell(hidden_dim, rec_dim)
         # Prior
@@ -43,7 +45,7 @@ class RSSM(nn.Module):
         device = next(self.parameters()).device
         deter = self._initial.repeat(batch_size, 1).to(device)
         stoch = torch.zeros(batch_size, self.latent_dim, dtype=torch.float32).to(device)
-        logits = torch.zeros(batch_size, self.stochastic_size, dtype=torch.float32).to(device)
+        logits = torch.zeros(batch_size, self.latent_dim, dtype=torch.float32).to(device)
         return {'deter': deter, 'stoch': stoch, 'logits': logits}
     
     def get_dist(self, logits):
@@ -57,23 +59,29 @@ class RSSM(nn.Module):
 
         posterior: t+1 -> t+T
         """
+        obs = swap(obs)
+        action = swap(action)
+        first = swap(first)
+
         if state is None:
-            state = self.initialize(obs.shape[0])
+            state = self.initialize(obs.shape[1])
         posterior = {'deter': [], 'stoch': [], 'logits': []}
         for o, a, f in zip(obs, action, first):
             state = self.obs_step(state, a, o, f)
             for k, v in state.items():
                 posterior[k].append(v)
         for k, v in posterior.items():
-            posterior[k] = torch.stack(v, dim=0)
+            posterior[k] = torch.stack(v, dim=1)
         return posterior
     
     def imagine(self, action, state=None):
         """
         action: t -> t+T-1
-        
+
         prior: t+1 -> t+T
         """
+        action = swap(action)
+
         if state is None:
             state = self.initialize(action.shape[0])
         prior = {'deter': [], 'stoch': [], 'logits': []}
@@ -82,7 +90,7 @@ class RSSM(nn.Module):
             for k, v in state.items():
                 prior[k].append(v)
         for k, v in prior.items():
-            prior[k] = torch.stack(v, dim=0)
+            prior[k] = torch.stack(v, dim=1)
         return prior
 
     def obs_step(self, state, action, obs, first):
@@ -112,7 +120,6 @@ class RSSM(nn.Module):
         stoch = dist.sample()
         deter = prior['deter']
         return {'deter': deter, 'stoch': stoch, 'logits': logits}
-
 
     def img_step(self, state, action):
         """
