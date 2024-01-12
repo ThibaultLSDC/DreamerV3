@@ -2,8 +2,7 @@ import numpy as np
 
 
 class Episode:
-    def __init__(self, max_len, structure):
-        self.max_len = max_len
+    def __init__(self, structure):
         self.structure = structure
         self.reset()
     
@@ -38,12 +37,22 @@ class Buffer:
         self.reset()
 
         self.idx = 0
-    
+
+        ep_structure = {k: v for k, v in structure.items() if k != 'first'}
+        self.episode = Episode(ep_structure)
+        self.length = 0
+
     def reset(self):
         self.buffer = {key: np.zeros((self.max_len, *self.structure[key].shape), dtype=self.structure[key].dtype) for key in self.structure}
     
-    def push(self, episode):
+    def push(self, data, is_last=False):
+        self.episode.push(data)
+        if is_last:
+            self.push_ep(self.episode.flush())
+
+    def push_ep(self, episode):
         l = episode['length']
+        self.length = min(self.length + l, self.max_len)
         i = self.idx
         m = self.max_len
         for key in self.structure:
@@ -60,3 +69,6 @@ class Buffer:
         for key in self.buffer:
             batch[key] = self.buffer[key][idx[:, None] + np.arange(sequence_len+1)]
         return batch
+    
+    def __len__(self):
+        return self.length
