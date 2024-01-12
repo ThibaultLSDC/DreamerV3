@@ -53,7 +53,7 @@ class GRUCell(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        std = 1.0 / torch.sqrt(self.linear.weight.size(1))
+        std = 1.0 / self.linear.weight.size(1)**0.5
         nn.init.uniform_(self.linear.weight, -std, std)
         nn.init.uniform_(self.linear.bias, -std, std)
     
